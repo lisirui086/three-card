@@ -17,6 +17,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 // 引入Draco压缩网格加载器 解压模型
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 
+// 引入hdr图像加载器
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
+
+// 引入theejs的Water库
+import { Water } from 'three/addons/objects/Water2.js'
+
 // 初始化场景
 const scene = new THREE.Scene()
 
@@ -32,6 +38,10 @@ scene.add(camera)
 // 初始化渲染器
 const renderer = new THREE.WebGLRenderer( { antialias: true } )
 renderer.setSize(window.innerWidth, window.innerHeight)
+// 设置色调映射
+renderer.outputColorSpace = THREE.SRGBColorSpace
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 0.5
 
 // 声明控制器
 let controls
@@ -41,6 +51,20 @@ const directionalLight = new THREE.DirectionalLight( 0xffffff, 1)
 directionalLight.position.set(0, 50, 0)
 scene.add(directionalLight)
 
+// 创建水面
+const waterGeometry = new THREE.CircleGeometry(300, 32)
+const water = new Water(waterGeometry, {
+  textureWidth: 512,
+  textureHeight: 512,
+  color: 0xeeeeff,
+  flowDirection: new THREE.Vector2(1,1),
+  scale: 100
+})
+water.rotation.x = -Math.PI / 2
+water.position.y = -0.4
+
+scene.add(water)
+
 // 初始化GLTF加载器、DRACOLoader 
 const loader = new GLTFLoader()
 const dracoLoader = new DRACOLoader()
@@ -49,7 +73,20 @@ loader.setDRACOLoader( dracoLoader )
 
 loader.load('/model/scene.glb', (gltf) => {
   const model = gltf.scene
+  model.traverse(child=>{
+    if(child.name === 'Plane') {
+      child.visible = false
+    }
+  })
   scene.add(model)
+})
+
+// 初始化hdr图像加载器
+const rgbeLoader = new RGBELoader()
+rgbeLoader.load('/textures/sky.hdr', texture => {
+  texture.mapping = THREE.EquirectangularRefractionMapping
+  scene.background = texture
+  scene.environment = texture
 })
 
 // 渲染函数
@@ -70,12 +107,14 @@ function handResize() {
 onMounted(() => {
   // 将渲染器追加到画布上
   canvas.value.appendChild(renderer.domElement)
+
   // 初始化轨道控制器
   controls = new OrbitControls(camera, canvas.value)
   // 启用阻尼（惯性）
   controls.enableDamping = true
   // 因为开启了阻尼 必须在动画循环里调用
   controls.update()
+
   window.addEventListener('resize', handResize)
 }),
 
