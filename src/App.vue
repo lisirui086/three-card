@@ -3,7 +3,7 @@
 import { ref, onMounted } from 'vue'
 
 // 引入lodash的debounced 防抖
-import { debounced } from 'lodash'
+import { throttle } from 'lodash'
 
 // 引入threejs
 import * as THREE from 'three'
@@ -161,6 +161,101 @@ rgbeLoader.load('/textures/sky.hdr', texture => {
   scene.environment = texture
 })
 
+// 实例化创建漫天星星
+const starInstance = new THREE.InstancedMesh(
+  new THREE.SphereGeometry(0.1, 32, 32),
+  new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 10
+  }),
+  100
+)
+
+// 起初和集合时的位置
+const starBeginArr = []
+const starEndArr = []
+
+for (let i = 0; i < 100; i++) {
+  let x = Math.random() * 100 - 50
+  let y = Math.random() * 100 - 50
+  let z = Math.random() * 100 -50
+  starBeginArr.push(new THREE.Vector3(x, y, z))
+  
+  // 四维矩阵 表示为一个 4x4
+  const m = new THREE.Matrix4()
+  m.setPosition(x, y, z)
+  starInstance.setMatrixAt(i, m)
+}
+scene.add(starInstance)
+
+// 使用路径以及可选的孔洞来定义一个二维形状平面
+const heartShape = new THREE.Shape()
+heartShape.moveTo(25, 25)
+heartShape.bezierCurveTo(25, 25, 20, 0, 0, 0)
+heartShape.bezierCurveTo(-30, 0, -30, 35, -30, 35)
+heartShape.bezierCurveTo(-30, 55, -10, 77, 25, 95)
+heartShape.bezierCurveTo(60, 77, 80, 55, 80, 35)
+heartShape.bezierCurveTo(80, 35, 80, 0, 50, 0)
+heartShape.bezierCurveTo(35, 0, 25, 25, 25, 25)
+
+// 根据爱心路径获取点
+let centerHeart = new THREE.Vector3(0, 2, 10)
+for (let i = 0; i < 100; i++) {
+  let point = heartShape.getPoint(i / 100)
+  starEndArr.push(
+    new THREE.Vector3(
+      point.x * 0.1 + centerHeart.x,
+      point.y * 0.1 + centerHeart.y,
+      centerHeart.z
+    )
+  )
+}
+
+// 创建爱心动画
+function makeHeart () {
+  let params = {
+    time: 0
+  }
+  gsap.to(params, {
+    time: 1,
+    duration: 1,
+    onUpdate: () => {
+      for (let i = 0; i < 100; i++) {
+        let x = starBeginArr[i].x + (starEndArr[i].x - starBeginArr[i].x) * params.time
+        let y = starBeginArr[i].y + (starEndArr[i].y - starBeginArr[i].y) * params.time
+        let z = starBeginArr[i].z + (starEndArr[i].z - starBeginArr[i].z) * params.time
+        let m = new THREE.Matrix4()
+        m.setPosition(x, y, z)
+        starInstance.setMatrixAt(i, m)
+      }
+      starInstance.instanceMatrix.needsUpdate = true
+    }
+  })
+}
+
+// 恢复成满天星
+function restoreHeart () {
+  let params = {
+    time: 0
+  }
+  gsap.to(params, {
+    time: 1,
+    duration: 1,
+    onUpdate: () => {
+      for (let i = 0; i < 100; i++) {
+        let x = starEndArr[i].x + (starBeginArr[i].x - starEndArr[i].x) * params.time
+        let y = starEndArr[i].y + (starBeginArr[i].y - starEndArr[i].y) * params.time
+        let z = starEndArr[i].z + (starBeginArr[i].z - starEndArr[i].z) * params.time
+        let m = new THREE.Matrix4()
+        m.setPosition(x, y, z)
+        starInstance.setMatrixAt(i, m)
+      }
+      starInstance.instanceMatrix.needsUpdate = true
+    }
+  })
+}
+
 // 补间动画 gsap.timeline()
 let timeline1 = gsap.timeline()
 let timeline2 = gsap.timeline()
@@ -224,6 +319,7 @@ const scenes = [
         new THREE.Vector3(7, 0, 23),
         new THREE.Vector3(0, 0, 0)
       )
+      makeHeart()
     }
   },
   {
@@ -270,20 +366,18 @@ onMounted(() => {
   controls.update()
 
   window.addEventListener('resize', handResize)
-  window.addEventListener('wheel', (e) => {
-    // if(isAnimate) return
-    if(e.deltaY > 0){
+
+  window.addEventListener('keyup', (e) => {
+    if(e.key === ' '){
       sceneIndex.value++
       if(sceneIndex.value > scenes.length - 1){
-        // 重置
+        // 重置并将爱心变成满天星
         sceneIndex.value = 0
+        restoreHeart()
       }
     }
     // 执行对应索引场景的回调函数
     scenes[sceneIndex.value].callback()
-    /* setTimeout(()=>{
-      isAnimate = false
-    }, 1000) */
   }, false)
 })
 
@@ -294,7 +388,7 @@ animate()
 <template>
   <div class='canvas' ref='canvas'>
     <div class='scenes' :style="{transform: `translate3d(0, ${-sceneIndex * 100}vh, 0)`}">
-      <div class="info" v-for='item in scenes' :key='index'>
+      <div class="info" v-for='(item, index) in scenes' :key='index'>
         <h1 class='text'> {{ item.title }} </h1>
       </div>
     </div>
